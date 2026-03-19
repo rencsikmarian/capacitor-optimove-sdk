@@ -61,6 +61,7 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         // Standard init without optimobile
         if optimoveMobileCredentials == nil && !enableDelayed {
             Optimove.initialize(with: builder.build())
+            print("OptimoveSDK: Initialized successfully")
             return
         }
 

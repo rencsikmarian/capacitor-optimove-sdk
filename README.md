@@ -127,6 +127,22 @@ buildscript {
 
 ## iOS Setup
 
+### Initialization (required)
+
+The Optimove SDK must be initialized early in the app lifecycle, before the Capacitor web view loads. Add the following to your `AppDelegate.swift`:
+
+```swift
+import capacitor_optimove_sdk
+
+func application(_ application: UIApplication,
+                 didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    OptimoveSDKImplementation.initializeFromConfig()
+    return true
+}
+```
+
+This reads credentials and settings from your `Info.plist`. The Capacitor plugin bridge connects automatically when the web view loads.
+
 ### Deep Linking
 
 If you use deferred deep links, add the following to your `AppDelegate.swift` to forward universal links to the Optimove SDK:
