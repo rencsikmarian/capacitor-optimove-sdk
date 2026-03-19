@@ -132,7 +132,7 @@ public class OptimoveSDKPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getVisitorId(_ call: CAPPluginCall) {
-        call.resolve(["visitorId": implementation.getVisitorId()])
+        call.resolve(["visitorId": implementation.getVisitorId() ?? ""])
     }
 
     @objc func signOutUser(_ call: CAPPluginCall) {

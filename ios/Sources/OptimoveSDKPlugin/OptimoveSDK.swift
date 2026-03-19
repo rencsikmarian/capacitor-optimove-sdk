@@ -168,7 +168,7 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         Optimove.shared.registerUser(sdkId: userId, email: email)
     }
 
-    public func getVisitorId() -> String {
+    public func getVisitorId() -> String? {
         return Optimove.getVisitorID()
     }
 
@@ -223,7 +223,7 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         }
     }
 
-    public func inAppGetInboxSummary(completion: @escaping (Int, Int) -> Void, failure: @escaping () -> Void) {
+    public func inAppGetInboxSummary(completion: @escaping (Int64, Int64) -> Void, failure: @escaping () -> Void) {
         OptimoveInApp.getInboxSummaryAsync { summary in
             guard let summary = summary else {
                 failure()
