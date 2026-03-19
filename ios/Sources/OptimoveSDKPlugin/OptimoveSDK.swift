@@ -4,7 +4,7 @@ import OptimoveSDK
 /// Callback type for delivering events from native to the plugin bridge
 public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: Any]) -> Void
 
-@objc public class OptimoveSDKImpl: NSObject {
+@objc public class OptimoveSDKImplementation: NSObject {
 
     private static var pendingPush: PushNotification?
     private static var pendingDdl: DeepLinkResolution?
@@ -13,28 +13,27 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
     private static let sdkTypeCapacitor = 107
     private static let runtimeTypeCapacitor = 4
 
-    private var eventCallback: OptimoveEventCallback?
+    /// Static callback set by the plugin when it loads (JS bridge ready)
+    static var eventCallback: OptimoveEventCallback?
 
-    public func setEventCallback(_ callback: @escaping OptimoveEventCallback) {
-        self.eventCallback = callback
-    }
+    // MARK: - Early Initialization (call from AppDelegate)
 
-    // MARK: - Initialization
+    /// Initialize the Optimove SDK. Call this from AppDelegate.didFinishLaunchingWithOptions.
+    /// Reads credentials from Info.plist.
+    @objc public static func initializeFromConfig() {
+        let optimoveCredentials = infoPlistString("optimoveCredentials")
+        let optimoveMobileCredentials = infoPlistString("optimoveMobileCredentials")
+        let inAppStrategy = infoPlistString("inAppConsentStrategy") ?? "in-app-disabled"
+        let enableDDL = infoPlistBool("enableDeferredDeepLinking")
+        let ddlCname = infoPlistString("ddlCname")
+        let enableDelayed = infoPlistBool("delayedInitialization.enable")
+        let delayedRegion = infoPlistString("delayedInitialization.region")
+        let delayedEnableOptimove = infoPlistBool("delayedInitialization.featureSet.enableOptimove")
+        let delayedEnableOptimobile = infoPlistBool("delayedInitialization.featureSet.enableOptimobile")
 
-    public func initialize(
-        optimoveCredentials: String?,
-        optimoveMobileCredentials: String?,
-        inAppConsentStrategy: String,
-        enableDeferredDeepLinking: Bool,
-        ddlCname: String?,
-        enableDelayedInitialization: Bool,
-        delayedRegion: String?,
-        delayedEnableOptimove: Bool,
-        delayedEnableOptimobile: Bool
-    ) {
         var builder: OptimoveConfigBuilder
 
-        if enableDelayedInitialization {
+        if enableDelayed {
             let regionStr = delayedRegion ?? "EU"
             let region: OptimobileConfig.Region
             switch regionStr {
@@ -50,7 +49,7 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
             builder = OptimoveConfigBuilder(region: region, features: featureSet)
         } else {
             guard optimoveCredentials != nil || optimoveMobileCredentials != nil else {
-                print("OptimoveSDK: No credentials provided in capacitor.config")
+                print("OptimoveSDK: No credentials found in Info.plist")
                 return
             }
             builder = OptimoveConfigBuilder(
@@ -60,35 +59,35 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         }
 
         // Standard init without optimobile
-        if optimoveMobileCredentials == nil && !enableDelayedInitialization {
+        if optimoveMobileCredentials == nil && !enableDelayed {
             Optimove.initialize(with: builder.build())
             return
         }
 
         // Delayed init with optimobile disabled
-        if enableDelayedInitialization && !delayedEnableOptimobile {
+        if enableDelayed && !delayedEnableOptimobile {
             Optimove.initialize(with: builder.build())
             return
         }
 
         // Push handlers
-        builder.setPushOpenedHandler { [weak self] notification in
-            guard let self = self, let cb = self.eventCallback else {
-                OptimoveSDKImpl.pendingPush = notification
+        builder.setPushOpenedHandler { notification in
+            guard let cb = eventCallback else {
+                pendingPush = notification
                 return
             }
-            cb("pushOpened", OptimoveSDKImpl.pushNotificationToDict(notification))
+            cb("pushOpened", pushNotificationToDict(notification))
         }
 
         if #available(iOS 10, *) {
-            builder.setPushReceivedInForegroundHandler { [weak self] notification, completionHandler in
-                self?.eventCallback?("pushReceived", OptimoveSDKImpl.pushNotificationToDict(notification))
+            builder.setPushReceivedInForegroundHandler { notification, completionHandler in
+                eventCallback?("pushReceived", pushNotificationToDict(notification))
                 completionHandler(.alert)
             }
         }
 
         // In-app consent
-        switch inAppConsentStrategy {
+        switch inAppStrategy {
         case "auto-enroll":
             builder.enableInAppMessaging(inAppConsentStrategy: .autoEnroll)
         case "explicit-by-user":
@@ -98,23 +97,23 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         }
 
         // In-app deep link handler
-        builder.setInAppDeepLinkHandler { [weak self] data in
+        builder.setInAppDeepLinkHandler { data in
             let dict: [String: Any] = [
                 "deepLinkData": data.deepLinkData as Any,
                 "messageId": data.messageId,
                 "messageData": data.messageData as Any
             ]
-            self?.eventCallback?("inAppDeepLink", dict)
+            eventCallback?("inAppDeepLink", dict)
         }
 
         // Deferred deep linking
-        if enableDeferredDeepLinking {
-            let ddlHandler: DeepLinkHandler = { [weak self] resolution in
-                guard let self = self, let cb = self.eventCallback else {
-                    OptimoveSDKImpl.pendingDdl = resolution
+        if enableDDL {
+            let ddlHandler: DeepLinkHandler = { resolution in
+                guard let cb = eventCallback else {
+                    pendingDdl = resolution
                     return
                 }
-                cb("deepLink", OptimoveSDKImpl.ddlResolutionToDict(resolution))
+                cb("deepLink", ddlResolutionToDict(resolution))
             }
 
             if let cname = ddlCname {
@@ -129,21 +128,23 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
 
         Optimove.initialize(with: builder.build())
 
-        OptimoveInApp.setOnInboxUpdated { [weak self] in
-            self?.eventCallback?("inAppInboxUpdated", [:])
+        OptimoveInApp.setOnInboxUpdated {
+            eventCallback?("inAppInboxUpdated", [:])
         }
     }
 
     // MARK: - Pending Events (Cold Start)
 
-    public func deliverPendingEvents() {
-        if let push = OptimoveSDKImpl.pendingPush {
-            eventCallback?("pushOpened", OptimoveSDKImpl.pushNotificationToDict(push))
-            OptimoveSDKImpl.pendingPush = nil
+    /// Deliver any events that arrived before the JS bridge was ready.
+    /// Called by the plugin's load() after setting the event callback.
+    public static func deliverPendingEvents() {
+        if let push = pendingPush {
+            eventCallback?("pushOpened", pushNotificationToDict(push))
+            pendingPush = nil
         }
-        if let ddl = OptimoveSDKImpl.pendingDdl {
-            eventCallback?("deepLink", OptimoveSDKImpl.ddlResolutionToDict(ddl))
-            OptimoveSDKImpl.pendingDdl = nil
+        if let ddl = pendingDdl {
+            eventCallback?("deepLink", ddlResolutionToDict(ddl))
+            pendingDdl = nil
         }
     }
 
@@ -245,11 +246,10 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         return OptimoveInApp.markAllInboxItemsAsRead()
     }
 
-    /// Returns: 0 = FAILED, 1 = EXPIRED, 2 = PRESENTED, -1 = not found
     public func inAppPresentInboxMessage(messageId: Int) -> Int {
         let inboxItems = OptimoveInApp.getInboxItems()
         guard let msg = inboxItems.first(where: { $0.id == Int64(messageId) }) else {
-            return 0 // FAILED
+            return 0
         }
 
         let presentationResult = OptimoveInApp.presentInboxMessage(item: msg)
@@ -260,7 +260,6 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
         }
     }
 
-    /// Returns true if deleted, false if not found
     public func inAppDeleteMessageFromInbox(messageId: Int) -> Bool {
         let inboxItems = OptimoveInApp.getInboxItems()
         guard let msg = inboxItems.first(where: { $0.id == Int64(messageId) }) else {
@@ -271,14 +270,14 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
 
     // MARK: - Private Helpers
 
-    private func overrideInstallInfo(builder: OptimoveConfigBuilder) {
+    private static func overrideInstallInfo(builder: OptimoveConfigBuilder) {
         let runtimeInfo: [String: AnyObject] = [
-            "id": OptimoveSDKImpl.runtimeTypeCapacitor as AnyObject,
+            "id": runtimeTypeCapacitor as AnyObject,
             "version": "8.0.0" as AnyObject,
         ]
         let sdkInfo: [String: AnyObject] = [
-            "id": OptimoveSDKImpl.sdkTypeCapacitor as AnyObject,
-            "version": OptimoveSDKImpl.sdkVersion as AnyObject,
+            "id": sdkTypeCapacitor as AnyObject,
+            "version": sdkVersion as AnyObject,
         ]
         builder.setRuntimeInfo(runtimeInfo: runtimeInfo)
         builder.setSdkInfo(sdkInfo: sdkInfo)
@@ -288,6 +287,26 @@ public typealias OptimoveEventCallback = (_ eventName: String, _ data: [String: 
             isRelease = false
         #endif
         builder.setTargetType(isRelease: isRelease)
+    }
+
+    private static func infoPlistString(_ key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private static func infoPlistBool(_ key: String) -> Bool {
+        if let value = Bundle.main.object(forInfoDictionaryKey: key) {
+            if let boolValue = value as? Bool {
+                return boolValue
+            }
+            if let stringValue = value as? String {
+                return stringValue.caseInsensitiveCompare("true") == .orderedSame
+            }
+        }
+        return false
     }
 
     private static func pushNotificationToDict(_ notification: PushNotification) -> [String: Any] {

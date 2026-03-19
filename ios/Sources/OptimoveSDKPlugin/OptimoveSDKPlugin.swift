@@ -25,69 +25,20 @@ public class OptimoveSDKPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "inAppDeleteMessageFromInbox", returnType: CAPPluginReturnPromise),
     ]
 
-    private let implementation = OptimoveSDKImpl()
+    private let implementation = OptimoveSDKImplementation()
 
     // MARK: - Lifecycle
 
+    /// Called when the JS bridge is ready. SDK should already be initialized
+    /// from AppDelegate via OptimoveSDKImplementation.initializeFromConfig().
+    /// This just wires up the event callback so native events reach JS.
     override public func load() {
-        implementation.setEventCallback { [weak self] eventName, data in
+        OptimoveSDKImplementation.eventCallback = { [weak self] eventName, data in
             self?.notifyListeners(eventName, data: data)
         }
 
-        // Read config: capacitor.config.json first, Info.plist fallback
-        let config = getConfig()
-
-        implementation.initialize(
-            optimoveCredentials: configString("optimoveCredentials", config: config),
-            optimoveMobileCredentials: configString("optimoveMobileCredentials", config: config),
-            inAppConsentStrategy: configString("inAppConsentStrategy", config: config) ?? "in-app-disabled",
-            enableDeferredDeepLinking: configBool("enableDeferredDeepLinking", config: config),
-            ddlCname: configString("ddlCname", config: config),
-            enableDelayedInitialization: configBool("delayedInitialization.enable", config: config),
-            delayedRegion: configString("delayedInitialization.region", config: config),
-            delayedEnableOptimove: configBool("delayedInitialization.featureSet.enableOptimove", config: config),
-            delayedEnableOptimobile: configBool("delayedInitialization.featureSet.enableOptimobile", config: config)
-        )
-
-        implementation.deliverPendingEvents()
-    }
-
-    // MARK: - Config Resolution (capacitor.config.json -> Info.plist fallback)
-
-    /// Reads a string value: tries capacitor.config.json first, then Info.plist
-    private func configString(_ key: String, config: PluginConfig) -> String? {
-        // 1. Try capacitor.config.json (plugins.OptimoveSDK section)
-        if let value = config.getString(key), !value.isEmpty {
-            return value
-        }
-        // 2. Fall back to Info.plist
-        if let value = Bundle.main.object(forInfoDictionaryKey: key) as? String, !value.isEmpty {
-            return value
-        }
-        return nil
-    }
-
-    /// Reads a bool value: tries capacitor.config.json first, then Info.plist.
-    /// Uses sentinel pattern to detect key presence in Capacitor config:
-    /// if getBoolean(key, true) == getBoolean(key, false), the key exists with that value.
-    /// If they differ, the key is absent (each returns its own default).
-    private func configBool(_ key: String, config: PluginConfig) -> Bool {
-        // 1. Try capacitor.config.json (handles both JSON boolean and string "true"/"false")
-        let withTrue = config.getBoolean(key, true)
-        let withFalse = config.getBoolean(key, false)
-        if withTrue == withFalse {
-            return withTrue
-        }
-        // 2. Fall back to Info.plist (supports both Bool and String values)
-        if let value = Bundle.main.object(forInfoDictionaryKey: key) {
-            if let boolValue = value as? Bool {
-                return boolValue
-            }
-            if let stringValue = value as? String {
-                return stringValue.caseInsensitiveCompare("true") == .orderedSame
-            }
-        }
-        return false
+        // Deliver any events that arrived before the JS bridge was ready
+        OptimoveSDKImplementation.deliverPendingEvents()
     }
 
     // MARK: - User Identification
