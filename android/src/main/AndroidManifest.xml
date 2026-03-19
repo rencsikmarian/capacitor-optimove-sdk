@@ -1,0 +1,27 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.capacitor.optimove.sdk.OptimoveInitProvider"
+            android:authorities="${applicationId}.optimoveinitprovider"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.capacitor.optimove.sdk.PushReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.optimove.push.RECEIVED" />
+                <action android:name="com.optimove.push.OPENED" />
+                <action android:name="com.optimove.push.DISMISSED" />
+                <action android:name="com.optimove.push.BUTTON_CLICKED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name="com.optimove.android.optimobile.FirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
