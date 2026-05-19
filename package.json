@@ -1,6 +1,6 @@
 {
   "name": "capacitor-optimove-sdk",
-  "version": "0.0.1",
+  "version": "8.0.1",
   "description": "Optimove for capacitor sdk",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
